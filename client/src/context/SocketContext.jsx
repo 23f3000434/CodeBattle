@@ -20,20 +20,35 @@ export function SocketProvider({ children }) {
     }
 
     const token = localStorage.getItem('cb_token');
-    const newSocket = io({
+
+    // In production, connect to same origin. In dev, connect to backend directly.
+    const socketOptions = {
       autoConnect: true,
       reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000
-    });
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      transports: ['websocket', 'polling']
+    };
+
+    // In production, socket.io connects to same origin automatically.
+    // In dev, Vite proxy handles /socket.io → localhost:5000
+    const newSocket = io(socketOptions);
 
     newSocket.on('connect', () => {
+      console.log('[Socket] Connected:', newSocket.id);
       setIsConnected(true);
       newSocket.emit('authenticate', token);
     });
 
-    newSocket.on('disconnect', () => {
+    newSocket.on('disconnect', (reason) => {
+      console.log('[Socket] Disconnected:', reason);
       setIsConnected(false);
+    });
+
+    newSocket.on('reconnect', (attemptNumber) => {
+      console.log('[Socket] Reconnected after', attemptNumber, 'attempts');
+      newSocket.emit('authenticate', token);
     });
 
     newSocket.on('auth_error', (msg) => {

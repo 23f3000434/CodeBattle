@@ -1,35 +1,31 @@
-function executeCode(userCode, testCases, timeLimitMs = 5000) {
+const { Worker } = require('worker_threads');
+const path = require('path');
+
+/**
+ * Execute user code in a Worker thread for isolation and proper timeout handling.
+ * Each test case runs in its own worker to prevent interference.
+ */
+async function executeCode(userCode, testCases, timeLimitMs = 5000) {
   const results = [];
   let passed = 0;
 
   for (const tc of testCases) {
     try {
-      const wrappedCode = `
-        ${userCode}
-        return solution(${tc.input});
-      `;
+      const result = await runInWorker(userCode, tc, timeLimitMs);
 
-      const fn = new Function(wrappedCode);
-
-      const start = Date.now();
-      let output;
-
-      try {
-        output = fn();
-      } catch (runtimeErr) {
+      if (result.error) {
         results.push({
           input: tc.input,
           expected: tc.expectedOutput,
           actual: null,
           passed: false,
-          error: runtimeErr.message,
+          error: result.error,
           isHidden: tc.isHidden
         });
         continue;
       }
 
-      const elapsed = Date.now() - start;
-      if (elapsed > timeLimitMs) {
+      if (result.timedOut) {
         results.push({
           input: tc.input,
           expected: tc.expectedOutput,
@@ -41,7 +37,7 @@ function executeCode(userCode, testCases, timeLimitMs = 5000) {
         continue;
       }
 
-      const outputStr = JSON.stringify(output);
+      const outputStr = result.output;
       const expectedStr = tc.expectedOutput.trim();
       const isPassed = outputStr === expectedStr;
 
@@ -72,6 +68,85 @@ function executeCode(userCode, testCases, timeLimitMs = 5000) {
     total: testCases.length,
     results
   };
+}
+
+/**
+ * Run code in an isolated Worker thread with timeout
+ */
+function runInWorker(userCode, testCase, timeLimitMs) {
+  return new Promise((resolve) => {
+    const workerCode = `
+      const { parentPort, workerData } = require('worker_threads');
+
+      // Disable dangerous globals
+      const _require = require;
+      globalThis.require = undefined;
+      globalThis.process = { env: {} };
+
+      try {
+        const userCode = workerData.userCode;
+        const input = workerData.input;
+
+        // Create a function from user code + test execution
+        const wrappedCode = userCode + '\\nreturn JSON.stringify(solution(' + input + '));';
+        const fn = new Function(wrappedCode);
+        const result = fn();
+
+        parentPort.postMessage({ output: result, error: null, timedOut: false });
+      } catch (err) {
+        parentPort.postMessage({ output: null, error: err.message, timedOut: false });
+      }
+    `;
+
+    let resolved = false;
+
+    const worker = new Worker(workerCode, {
+      eval: true,
+      workerData: {
+        userCode: userCode,
+        input: testCase.input
+      },
+      resourceLimits: {
+        maxOldGenerationSizeMb: 64,
+        maxYoungGenerationSizeMb: 16,
+        codeRangeSizeMb: 16
+      }
+    });
+
+    const timer = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        worker.terminate();
+        resolve({ output: null, error: null, timedOut: true });
+      }
+    }, timeLimitMs);
+
+    worker.on('message', (msg) => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timer);
+        resolve(msg);
+      }
+    });
+
+    worker.on('error', (err) => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timer);
+        resolve({ output: null, error: err.message, timedOut: false });
+      }
+    });
+
+    worker.on('exit', (code) => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timer);
+        if (code !== 0) {
+          resolve({ output: null, error: 'Execution failed (exit code ' + code + ')', timedOut: false });
+        }
+      }
+    });
+  });
 }
 
 module.exports = { executeCode };

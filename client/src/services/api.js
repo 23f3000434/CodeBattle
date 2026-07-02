@@ -1,5 +1,6 @@
 import axios from 'axios';
 
+// In production, API is on same origin. In dev, proxy handles it via vite config.
 const api = axios.create({
   baseURL: '/api',
   headers: { 'Content-Type': 'application/json' }
