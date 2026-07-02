@@ -5,10 +5,9 @@
   "scripts": {
     "start": "cd server && node server.js",
     "dev": "cd server && npm run dev",
-    "build": "cd client && npm install && npm run build",
+    "build": "cd client && npm install --include=dev && npx vite build && cd ../server && npm install",
     "install:all": "cd client && npm install && cd ../server && npm install",
-    "seed": "cd server && npm run seed",
-    "render-build": "cd client && npm install && npm run build && cd ../server && npm install"
+    "seed": "cd server && npm run seed"
   },
   "author": "Ashitosh Jagtap",
   "license": "MIT"
