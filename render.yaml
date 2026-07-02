@@ -3,8 +3,8 @@ services:
     name: codebattle
     runtime: node
     plan: free
-    buildCommand: cd client && npm install && npm run build && cd ../server && npm install
-    startCommand: cd server && npm start
+    buildCommand: yarn build
+    startCommand: cd server && node server.js
     envVars:
       - key: NODE_ENV
         value: production
@@ -12,5 +12,3 @@ services:
         sync: false  # Set manually in Render dashboard
       - key: JWT_SECRET
         generateValue: true
-      - key: PISTON_URL
-        value: https://emkc.org/api/v2/piston
